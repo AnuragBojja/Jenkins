@@ -1,7 +1,7 @@
 resource "aws_instance" "jenkins" {
-  ami = data.aws_ami.roboshop_ami
-  instance_type = t3.small
-  vpc_security_group_ids = [ aws_security_group.jenkins ]
+  ami = local.ami_id
+  instance_type = "t3.small"
+  vpc_security_group_ids = [ aws_security_group.jenkins.id ]
   subnet_id = "subnet-0d667c040add6be29"
   user_data = file("./jenkins.sh")
   root_block_device {
@@ -17,9 +17,9 @@ resource "aws_instance" "jenkins" {
 }
 
 resource "aws_instance" "jenkins-agent" {
-  ami = data.aws_ami.roboshop_ami
-  instance_type = t3.small
-  vpc_security_group_ids = [ aws_security_group.jenkins-agent ]
+  ami = local.ami_id
+  instance_type = "t3.small"
+  vpc_security_group_ids = [ aws_security_group.jenkins-agent.id ]
   subnet_id = "subnet-0d667c040add6be29"
   user_data = file("./jenkins-agent.sh")
   root_block_device {

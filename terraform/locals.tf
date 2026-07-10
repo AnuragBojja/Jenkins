@@ -6,4 +6,5 @@ locals {
   }
   common_name = ("${var.project_name}-${var.env}")
   zone_id = data.aws_route53_zone.selected.id
+  ami_id = data.aws_ami.roboshop_ami.id
 }
