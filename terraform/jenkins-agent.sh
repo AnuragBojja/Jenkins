@@ -1,3 +1,5 @@
+#!/bin/bash
+
 growpart /dev/nvme0n1 4
 
 lvextend -L +10G /dev/mapper/RootVG-varVol
