@@ -19,4 +19,10 @@ pipeline {
             }
         }
     }
+    post {
+        always{
+            sh "echo 'this will be run always'"
+            cleanWs()
+        }
+    }
 }
