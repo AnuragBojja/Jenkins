@@ -2,6 +2,12 @@ pipeline {
     agent {
         node { label "AGENT-1" }
     } 
+
+    options{
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        ansiColor('xterm')
+    }
     stages {
         stage("Build") {
             steps {
