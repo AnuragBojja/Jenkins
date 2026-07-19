@@ -4,3 +4,6 @@ variable "env" {
 variable "project_name" {
   default = "roboshop"
 }
+variable "sonar" {
+  default = "false"
+}

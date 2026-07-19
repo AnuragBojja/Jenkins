@@ -1,0 +1,369 @@
+// ============================================================================
+// JENKINS DECLARATIVE PIPELINE — COMPLETE REFERENCE (single file)
+// ============================================================================
+// A Jenkinsfile lives in the ROOT of your repo. Jenkins reads it on every
+// build. This file demonstrates every major section. In real pipelines you
+// use maybe 30% of this — the rest is here so you know it exists.
+//
+// STRUCTURE HIERARCHY:
+//   pipeline > agent/options/parameters/triggers/environment/tools
+//            > stages > stage > (agent/environment/when/steps/post)
+//            > post
+// ============================================================================
+
+pipeline {
+
+    // ------------------------------------------------------------------
+    // 1. AGENT — WHERE does the pipeline run?
+    // ------------------------------------------------------------------
+    // Options (pick ONE at top level):
+    //   agent any                → run on any available node
+    //   agent none               → no global agent; each stage MUST define its own
+    //   agent { label 'linux' }  → run on a node with this label
+    //   agent { docker { image 'node:20-alpine' } } → run inside a container
+    //   agent { kubernetes { yaml '...' } }         → dynamic pod on your EKS cluster
+    //
+    // Mental model: like nodeSelector in K8s — you're picking which
+    // machine executes the work.
+    agent any
+
+    // ------------------------------------------------------------------
+    // 2. OPTIONS — pipeline-level behavior settings
+    // ------------------------------------------------------------------
+    options {
+        timeout(time: 30, unit: 'MINUTES')          // kill build if it hangs
+        buildDiscarder(logRotator(numToKeepStr: '10')) // keep only last 10 builds
+        disableConcurrentBuilds()                   // no parallel runs of SAME job
+        timestamps()                                // prefix every log line with time
+        retry(1)                                    // retry whole pipeline once on failure
+        skipDefaultCheckout()                       // don't auto-clone; you control checkout
+        ansiColor('xterm')                          // colored console output (plugin)
+    }
+
+    // ------------------------------------------------------------------
+    // 3. PARAMETERS — user inputs when triggering "Build with Parameters"
+    // ------------------------------------------------------------------
+    // Accessed later as: params.PARAM_NAME
+    // NOTE: first run after adding params fails/uses defaults — Jenkins
+    // needs one run to "learn" the parameters exist.
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Docker image tag to build/deploy')
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'qa', 'prod'], description: 'Target environment')
+        booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run unit tests?')
+        booleanParam(name: 'DEPLOY', defaultValue: false, description: 'Deploy to EKS after build?')
+        text(name: 'RELEASE_NOTES', defaultValue: '', description: 'Multi-line release notes')
+        password(name: 'ONE_TIME_SECRET', defaultValue: '', description: 'Masked in UI (rarely used — prefer credentials)')
+    }
+
+    // ------------------------------------------------------------------
+    // 4. TRIGGERS — WHEN does the pipeline start automatically?
+    // ------------------------------------------------------------------
+    // In practice: GitHub webhooks (push event → Jenkins) are preferred
+    // over polling. Webhook needs no triggers block — it's configured in
+    // the job + GitHub repo settings.
+    triggers {
+        // cron: standard cron syntax. H = "hash" — Jenkins picks a
+        // consistent random minute to spread load across jobs.
+        cron('H 2 * * *')                 // nightly ~2 AM
+        pollSCM('H/5 * * * *')            // check git for changes every ~5 min (webhook is better)
+        // upstream(upstreamProjects: 'catalogue-build', threshold: hudson.model.Result.SUCCESS)
+    }
+
+    // ------------------------------------------------------------------
+    // 5. TOOLS — auto-install tools configured in Manage Jenkins > Tools
+    // ------------------------------------------------------------------
+    // The NAME must match what you configured in Global Tool Configuration.
+    tools {
+        maven 'maven-3.9'        // for your shipping (Java) service
+        nodejs 'node-20'         // for catalogue/user/cart (needs NodeJS plugin)
+        // jdk 'jdk-17'
+        // terraform 'terraform-1.7'
+    }
+
+    // ------------------------------------------------------------------
+    // 6. ENVIRONMENT — variables available to ALL stages
+    // ------------------------------------------------------------------
+    // Three kinds of variables in Jenkins:
+    //   a) Built-in env vars   → env.BUILD_NUMBER, env.JOB_NAME, env.WORKSPACE,
+    //                            env.GIT_COMMIT, env.BRANCH_NAME (multibranch)
+    //   b) Your own env vars   → defined here, accessed as env.VAR or "$VAR" in sh
+    //   c) params              → params.IMAGE_TAG (read-only, from block #3)
+    //
+    // credentials('id') is SPECIAL — pulls from Jenkins credential store:
+    //   - usernamePassword cred → gives you VAR, VAR_USR, VAR_PSW
+    //   - secret text / file    → gives you VAR
+    // Values are MASKED in console output automatically.
+    environment {
+        PROJECT        = 'roboshop'
+        COMPONENT      = 'catalogue'
+        REGISTRY       = 'anuragbojja'                           // your Docker Hub
+        IMAGE          = "${REGISTRY}/${COMPONENT}"              // Groovy string interpolation — DOUBLE quotes required
+        VERSION        = "${params.IMAGE_TAG}-${env.BUILD_NUMBER}" // e.g. latest-42
+        AWS_REGION     = 'us-east-1'
+        EKS_CLUSTER    = 'roboshop-dev'
+        DOCKER_CREDS   = credentials('dockerhub-creds')          // → DOCKER_CREDS_USR / DOCKER_CREDS_PSW
+        // SONAR_TOKEN = credentials('sonar-token')              // secret text example
+    }
+
+    // ------------------------------------------------------------------
+    // 7. STAGES — the actual work, in order
+    // ------------------------------------------------------------------
+    stages {
+
+        // ==============================================================
+        stage('Checkout') {
+            steps {
+                // Because we used skipDefaultCheckout() above:
+                checkout scm    // 'scm' = whatever repo/branch the job is configured with
+
+                // Or explicit:
+                // git branch: 'main', url: 'https://github.com/AnuragBojja/kube-roboshop.git'
+
+                // sh runs shell commands. Single line:
+                sh 'git log -1 --oneline'
+
+                // Multi-line uses triple quotes:
+                sh '''
+                    echo "Workspace: $WORKSPACE"
+                    echo "Build: $BUILD_NUMBER on node $NODE_NAME"
+                    ls -la
+                '''
+                // QUOTING RULE (important, common interview question):
+                //   sh '...' single quotes → shell expands $VAR (env vars work)
+                //   sh "..." double quotes → GROOVY expands ${VAR} first
+                // Prefer single quotes + env vars: avoids Groovy injection issues
+                // with untrusted input (branch names, commit messages).
+            }
+        }
+
+        // ==============================================================
+        stage('Read Metadata') {
+            steps {
+                // script {} block = escape hatch into full Groovy.
+                // Declarative pipeline is intentionally rigid; script{}
+                // lets you use if/else, loops, defining variables, etc.
+                script {
+                    // def = local Groovy variable (NOT an env var, only
+                    // visible inside this script block unless stored in env.)
+                    def packageJson = readJSON file: 'package.json'   // Pipeline Utility Steps plugin
+                    def appVersion  = packageJson.version
+
+                    echo "App version from package.json: ${appVersion}"
+
+                    // Promote a Groovy variable to an env var so LATER
+                    // stages can see it:
+                    env.APP_VERSION = appVersion
+
+                    // Conditional logic example:
+                    if (params.ENVIRONMENT == 'prod') {
+                        echo 'Production build — extra checks apply'
+                    }
+
+                    // currentBuild — mutable build metadata object:
+                    currentBuild.displayName = "#${BUILD_NUMBER}-${appVersion}"
+                    currentBuild.description = "Env: ${params.ENVIRONMENT}"
+                }
+            }
+        }
+
+        // ==============================================================
+        stage('Install Dependencies') {
+            // Stage-level agent override (works because tools/containers
+            // may differ per stage). Runs THIS stage in a container:
+            // agent { docker { image 'node:20-alpine' } }
+
+            // Stage-level environment — only visible inside this stage:
+            environment {
+                NPM_CONFIG_LOGLEVEL = 'warn'
+            }
+            steps {
+                sh 'npm ci'    // ci > install for pipelines: uses lockfile, deterministic
+            }
+        }
+
+        // ==============================================================
+        stage('Test & Scan') {
+            // when {} — conditional stage execution. Skipped stages show
+            // grey in the UI. Common conditions:
+            //   branch 'main' / branch pattern: 'release-*'
+            //   environment name: 'X', value: 'y'
+            //   expression { <any groovy returning boolean> }
+            //   allOf { ... } / anyOf { ... } / not { ... }
+            //   changeset '**/*.js'  → only if these files changed
+            when {
+                expression { params.RUN_TESTS }
+            }
+
+            // parallel — run child stages simultaneously (separate
+            // executors). Big time-saver for independent work.
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        sh 'npm test || true'   // || true → don't fail build (demo only; don't do this for real)
+                    }
+                    post {
+                        always {
+                            // junit publishes test results to Jenkins UI
+                            junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+                        }
+                    }
+                }
+                stage('Lint') {
+                    steps {
+                        sh 'npm run lint || true'
+                    }
+                }
+                stage('Dependency Audit') {
+                    steps {
+                        // retry a flaky step (network) up to 3 times:
+                        retry(3) {
+                            sh 'npm audit --audit-level=critical || true'
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==============================================================
+        stage('Docker Build & Push') {
+            steps {
+                // timeout on a specific block of steps:
+                timeout(time: 10, unit: 'MINUTES') {
+                    sh '''
+                        docker build -t $IMAGE:$VERSION .
+                        docker tag $IMAGE:$VERSION $IMAGE:latest
+                    '''
+                }
+
+                // TWO ways to use credentials:
+                //
+                // Way 1 — environment { X = credentials('id') } (block #6):
+                sh 'echo $DOCKER_CREDS_PSW | docker login -u $DOCKER_CREDS_USR --password-stdin'
+
+                // Way 2 — withCredentials{} scopes creds to a block only
+                // (tighter scope = better practice):
+                // withCredentials([usernamePassword(
+                //     credentialsId: 'dockerhub-creds',
+                //     usernameVariable: 'DUSER',
+                //     passwordVariable: 'DPASS')]) {
+                //     sh 'echo $DPASS | docker login -u $DUSER --password-stdin'
+                // }
+
+                sh '''
+                    docker push $IMAGE:$VERSION
+                    docker push $IMAGE:latest
+                '''
+            }
+        }
+
+        // ==============================================================
+        stage('Approval Gate') {
+            when {
+                allOf {
+                    expression { params.DEPLOY }
+                    expression { params.ENVIRONMENT == 'prod' }
+                }
+            }
+            steps {
+                // input — PAUSES the pipeline and waits for a human.
+                // Wrap in timeout or it can hang forever (holding an
+                // executor unless agent none + stage agents are used).
+                timeout(time: 15, unit: 'MINUTES') {
+                    input message: "Deploy ${IMAGE}:${VERSION} to PROD?",
+                          ok: 'Ship it',
+                          submitter: 'anurag,admin'   // who may approve
+                }
+            }
+        }
+
+        // ==============================================================
+        stage('Deploy to EKS') {
+            when { expression { params.DEPLOY } }
+            steps {
+                // Assumes the Jenkins node's EC2 instance role has EKS
+                // access (same pattern as your workstation instance).
+                sh '''
+                    aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER
+                    kubectl set image deployment/$COMPONENT $COMPONENT=$IMAGE:$VERSION -n $PROJECT
+                    kubectl rollout status deployment/$COMPONENT -n $PROJECT --timeout=120s
+                '''
+                // Helm alternative:
+                // sh 'helm upgrade --install $COMPONENT ./helm -n $PROJECT --set image.tag=$VERSION'
+            }
+        }
+
+        // ==============================================================
+        stage('Stash Demo (multi-node handoff)') {
+            steps {
+                // stash/unstash — move files BETWEEN agents/stages when
+                // stages run on different nodes (workspaces aren't shared).
+                sh 'echo "$VERSION" > build-info.txt'
+                stash name: 'build-info', includes: 'build-info.txt'
+                // ...later, on another agent:
+                // unstash 'build-info'
+
+                // archiveArtifacts — keep files WITH the build record in
+                // the Jenkins UI (survives after workspace cleanup):
+                archiveArtifacts artifacts: 'build-info.txt', fingerprint: true
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 8. POST — runs AFTER all stages, based on build result.
+    // ------------------------------------------------------------------
+    // Conditions (in execution order):
+    //   always    → no matter what
+    //   changed   → result differs from previous build
+    //   fixed     → previous failed, this passed
+    //   regression→ previous passed, this failed
+    //   success / unstable / failure / aborted
+    //   cleanup   → very last, after everything else
+    //
+    // post{} can ALSO exist inside any stage (see Unit Tests above).
+    post {
+        always {
+            echo "Build ${currentBuild.result ?: 'SUCCESS'} — duration: ${currentBuild.durationString}"
+        }
+        success {
+            echo "✅ ${IMAGE}:${VERSION} built and pushed."
+            // slackSend / emailext go here (plugins)
+        }
+        failure {
+            echo "❌ Build failed — check stage logs above."
+            // emailext subject: "FAILED: ${JOB_NAME} #${BUILD_NUMBER}", to: 'you@example.com', body: '...'
+        }
+        cleanup {
+            cleanWs()          // wipe workspace (Workspace Cleanup plugin)
+            sh 'docker image prune -f || true'
+        }
+    }
+}
+
+// ============================================================================
+// QUICK REFERENCE — VARIABLE CHEAT SHEET
+// ============================================================================
+// BUILT-IN ENV VARS (see full list at ${JENKINS_URL}/env-vars.html):
+//   env.BUILD_NUMBER   → "42"  (string! use .toInteger() for math)
+//   env.BUILD_URL      → link to this build
+//   env.JOB_NAME       → job/folder path
+//   env.WORKSPACE      → filesystem path of checkout
+//   env.NODE_NAME      → agent the stage ran on
+//   env.GIT_COMMIT / GIT_BRANCH / GIT_URL
+//   env.BRANCH_NAME / CHANGE_ID → multibranch pipelines / PR builds only
+//
+// GLOBAL OBJECTS (usable in script{} and post{}):
+//   params.*           → read-only build parameters
+//   currentBuild.result / displayName / description / durationString
+//   currentBuild.currentResult → result SO FAR (usable mid-build)
+//
+// SCRIPTED vs DECLARATIVE (interview classic):
+//   Declarative = pipeline { } — structured, validated, what you see here.
+//   Scripted    = node { }     — raw Groovy, full freedom, older style.
+//   Rule: use declarative; drop into script{} blocks when you need logic.
+//
+// SHARED LIBRARIES (your next step after this):
+//   @Library('roboshop-lib') _
+//   nodejsPipeline(component: 'catalogue')   // whole pipeline as one call
+//   → the "Ansible roles" of Jenkins: define once, reuse per microservice.
+// ============================================================================
