@@ -7,7 +7,11 @@
 - SonarQube scanner (restart jenkins after installing this plugin)
 - AnsiColor
 
-
+### credentials Name Format
+- github-roken -> for GitHub personal access token
+- ssh-auth -> for SSH authentication username and password
+- aws-cred -> for AWS authentication
+- sonar-
 ---
 ### Add the credentials to Jenkins 
 Add the ssh username and password to Jenkins credentials. The username is the one used to connect to the server and the password is the private key.
