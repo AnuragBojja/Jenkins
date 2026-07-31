@@ -10,15 +10,23 @@ xfs_growfs /
 xfs_growfs /var
 xfs_growfs /home
 
-
+echo "..."
+echo "..."
+echo "installing java-21-openjdk"
 yum install java-21-openjdk -y
 
 #installing terraform 
+echo "..."
+echo "..."
+echo "installing terraform"
 yum install -y yum-utils
 yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
 yum -y install terraform
 
 #installing docker
+echo "..."
+echo "..."
+echo "installing docker"
 dnf -y install dnf-plugins-core
 dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
 dnf install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
@@ -27,6 +35,9 @@ systemctl enable docker
 usermod -aG docker ec2-user
 
 #installing kubectl
+echo "..."
+echo "..."
+echo "installing kubectl"
 curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.35.3/2026-04-08/bin/linux/amd64/kubectl
 chmod +x ./kubectl
 mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
@@ -38,6 +49,11 @@ dnf install nodejs -y
 
 cd /home/ec2-user
 su - ec2-user -c '
+    echo "..."
+    echo "..."
+    echo "installing trivy"
+    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.72.0
+
 #   echo "..."
 #   echo "..."
 #   echo "installing ebs drivers"
