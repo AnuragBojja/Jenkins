@@ -8,10 +8,10 @@
 - AnsiColor
 
 ### credentials Name Format
-- github-roken -> for GitHub personal access token
+- github-token -> for GitHub personal access token
 - ssh-auth -> for SSH authentication username and password
 - aws-cred -> for AWS authentication
-- sonar-
+- sonar-token -> for SonarQube authentication
 ---
 ### Add the credentials to Jenkins 
 Add the ssh username and password to Jenkins credentials. The username is the one used to connect to the server and the password is the private key.
@@ -20,7 +20,13 @@ Add the ssh username and password to Jenkins credentials. The username is the on
 ### Add Node to Jenkins
 - Go to Manage Jenkins -> Manage Nodes and Clouds -> New Node
 use the name of the server as the node name and select "Permanent Agent". Then click OK.
-
+- make sure agent name matches in the code
+- Eg: AGENT-1 -> node name
+```
+agent {
+        node { label "AGENT-1" }
+    }
+```
 ---
 ### Create self hoster sonarQube server
     - user "SolveDevOps-SonarQube-Server-Ubuntu24.04-*" this ami to launch the instance
@@ -42,5 +48,5 @@ install plugin for sonarqube -> restart jenkins  -> install sonarqube scanner in
 - Navigate to "Webhooks"
 - Click "Add Webhook"
 - Enter the URL of the Jenkins server with /sonarqube-webhook/ at end.
-example: http://<jenkins_url>:8080/sonarqube-webhook/
+- example: ```http://<jenkins_url>:8080/sonarqube-webhook/```
 - Save the webhook
