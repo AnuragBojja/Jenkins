@@ -54,29 +54,29 @@ su - ec2-user -c '
     echo "installing trivy"
     curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.72.0
 
-#   echo "..."
-#   echo "..."
-#   echo "installing ebs drivers"
-#   kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.61"
+    echo "..."
+    echo "..."
+    echo "installing ebs drivers"
+    kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.61"
 
-#   echo "..."
-#   echo "..."
-#   echo "installing kubectx"
-#   git clone https://github.com/ahmetb/kubectx.git
-#   cd kubectx
-#   chmod +x kubens
-#   sudo mv ./kubens /usr/local/bin
-#   cd ..
+    echo "..."
+    echo "..."
+    echo "installing kubectx"
+    git clone https://github.com/ahmetb/kubectx.git
+    cd kubectx
+    chmod +x kubens
+    sudo mv ./kubens /usr/local/bin
+    cd ..
 
-#   echo "..."
-#   echo "..."
-#   echo "installing helm"
-#   curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
-#   chmod 700 get_helm.sh
-#   ./get_helm.sh
+    echo "..."
+    echo "..."
+    echo "installing helm"
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
+    chmod 700 get_helm.sh
+    ./get_helm.sh
 
-#   echo "..."
-#   echo "..."
-#   echo "installing k9s"
-#   curl -sS https://webinstall.dev/k9s | bash
+    echo "..."
+    echo "..."
+    echo "installing k9s"
+    curl -sS https://webinstall.dev/k9s | bash
 '
