@@ -57,7 +57,7 @@ su - ec2-user -c '
     echo "..."
     echo "..."
     echo "installing ebs drivers"
-    kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.61"
+    kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.66"
 
     echo "..."
     echo "..."
