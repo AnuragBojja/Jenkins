@@ -22,6 +22,7 @@ resource "aws_instance" "jenkins-agent" {
   vpc_security_group_ids = [ aws_security_group.jenkins-agent.id ]
   subnet_id = "subnet-0d667c040add6be29"
   user_data = file("./jenkins-agent.sh")
+  iam_instance_profile = aws_iam_instance_profile.jenkins-AdminAccess.name
   root_block_device {
     volume_size = 50
     volume_type = "gp3"
@@ -32,6 +33,11 @@ resource "aws_instance" "jenkins-agent" {
         Name = "${local.common_name}-jenkins-agent"
     }
   )
+}
+
+resource "aws_iam_instance_profile" "jenkins-AdminAccess" {
+  name = "Jenkins-Roboshop-AdminAccess"
+  role = "JenkinsAdminAccessForRoboShop"
 }
 
 resource "aws_route53_record" "jenkins" {

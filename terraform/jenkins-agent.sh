@@ -56,6 +56,11 @@ su - ec2-user -c '
 
     echo "..."
     echo "..."
+    echo "updating Kubeconfig file"
+    aws eks update-kubeconfig --region us-east-1 --name roboshop-dev-EKS
+    
+    echo "..."
+    echo "..."
     echo "installing ebs drivers"
     kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.66"
 
